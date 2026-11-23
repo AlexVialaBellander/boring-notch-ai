@@ -103,7 +103,9 @@ extension BoringNotchXPCHelper {
                     return entry
                 }
             }
-            reply(out.isEmpty ? nil : try? JSONSerialization.data(withJSONObject: out))
+            // `{}` when none of the files exist, so the app drops accounts that are gone;
+            // nil stays reserved for "the helper couldn't answer".
+            reply(try? JSONSerialization.data(withJSONObject: out))
         }
     }
 

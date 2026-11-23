@@ -154,12 +154,26 @@ struct CodexBarConfig: Decodable {
 }
 
 // MARK: - Per-account files (via helper `codexBarAccounts`)
+//
+// These are other apps' private files (CodexBar's and claude-swap's), and either app may
+// be missing, half set up or a different version. So every part decodes on its own and
+// a malformed field or record is skipped: one bad value never blanks the other providers.
 
 struct CodexBarAccountsPayload: Decodable {
     var claude: [ClaudeRetained]?
     var claudeSwap: ClaudeSwap?
     var codex: [CodexAccount]?
 
+    private enum CodingKeys: String, CodingKey { case claude, claudeSwap, codex }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        claude = c.lenientArray(ClaudeRetained.self, .claude)
+        claudeSwap = c.lenient(ClaudeSwap.self, .claudeSwap)
+        codex = c.lenientArray(CodexAccount.self, .codex)
+    }
+
+    /// CodexBar's last known usage for one claude-swap account (`opaqueID` = claude-swap's account number).
     struct ClaudeRetained: Decodable {
         var opaqueID: String?
         var primary: CodexBarRateWindow?
@@ -167,16 +181,48 @@ struct CodexBarAccountsPayload: Decodable {
         var extraRateWindows: [CodexBarCLIResult.ExtraWindow]?
         var updatedAt: Date?
         var usesLastKnownUsage: Bool?
+
+        private enum CodingKeys: String, CodingKey {
+            case opaqueID, primary, secondary, extraRateWindows, updatedAt, usesLastKnownUsage
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            opaqueID = c.lenient(FlexibleID.self, .opaqueID)?.value
+            primary = c.lenient(CodexBarRateWindow.self, .primary)
+            secondary = c.lenient(CodexBarRateWindow.self, .secondary)
+            extraRateWindows = c.lenientArray(CodexBarCLIResult.ExtraWindow.self, .extraRateWindows)
+            updatedAt = c.lenient(Date.self, .updatedAt)
+            usesLastKnownUsage = c.lenient(Bool.self, .usesLastKnownUsage)
+        }
     }
 
+    /// claude-swap's account list (`~/.claude-swap-backup/sequence.json`), keyed by account number.
     struct ClaudeSwap: Decodable {
-        var active: Int?
-        var accounts: [String: Account]?
+        var active: String?
+        var accounts: [String: Account]
+
+        private enum CodingKeys: String, CodingKey { case active, accounts }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            active = c.lenient(FlexibleID.self, .active)?.value
+            accounts = c.lenient([String: Lossy<Account>].self, .accounts)?.compactMapValues(\.value) ?? [:]
+        }
 
         struct Account: Decodable {
             var email: String?
             var organizationName: String?
             var alias: String?
+
+            private enum CodingKeys: String, CodingKey { case email, organizationName, alias }
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                email = c.lenient(String.self, .email)
+                organizationName = c.lenient(String.self, .organizationName)
+                alias = c.lenient(String.self, .alias)
+            }
         }
     }
 
@@ -187,6 +233,80 @@ struct CodexBarAccountsPayload: Decodable {
         var secondary: CodexBarRateWindow?
         var tertiary: CodexBarRateWindow?
         var updatedAt: Date?
+
+        private enum CodingKeys: String, CodingKey { case email, plan, primary, secondary, tertiary, updatedAt }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            email = c.lenient(String.self, .email)
+            plan = c.lenient(String.self, .plan)
+            primary = c.lenient(CodexBarRateWindow.self, .primary)
+            secondary = c.lenient(CodexBarRateWindow.self, .secondary)
+            tertiary = c.lenient(CodexBarRateWindow.self, .tertiary)
+            updatedAt = c.lenient(Date.self, .updatedAt)
+        }
+    }
+}
+
+/// One claude-swap account together with CodexBar's latest usage for it.
+struct ClaudeSwapAccount {
+    let number: String
+    let info: CodexBarAccountsPayload.ClaudeSwap.Account
+    let usage: CodexBarAccountsPayload.ClaudeRetained
+    let isActive: Bool
+}
+
+extension CodexBarAccountsPayload {
+    /// The claude-swap accounts CodexBar has usage for, in claude-swap's order.
+    ///
+    /// Empty unless claude-swap's account list and CodexBar's usage records are both there
+    /// and agree on at least one account; the notch then shows CodexBar's single Claude
+    /// login instead. Records for accounts claude-swap no longer lists are left out, and a
+    /// duplicated record keeps its newest reading.
+    var claudeSwapAccounts: [ClaudeSwapAccount] {
+        guard let swap = claudeSwap else { return [] }
+        var newest: [String: ClaudeRetained] = [:]
+        for record in claude ?? [] {
+            guard let id = record.opaqueID, swap.accounts[id] != nil else { continue }
+            if let kept = newest[id], (kept.updatedAt ?? .distantPast) >= (record.updatedAt ?? .distantPast) { continue }
+            newest[id] = record
+        }
+        return newest
+            .map { id, record in
+                ClaudeSwapAccount(number: id, info: swap.accounts[id]!, usage: record, isActive: swap.active == id)
+            }
+            .sorted { (Int($0.number) ?? .max, $0.number) < (Int($1.number) ?? .max, $1.number) }
+    }
+}
+
+/// Decodes to nil instead of failing, so one malformed element can't sink its siblings.
+struct Lossy<T: Decodable>: Decodable {
+    let value: T?
+    init(from decoder: Decoder) throws { value = try? T(from: decoder) }
+}
+
+/// An account number written as either 3 or "3".
+struct FlexibleID: Decodable {
+    let value: String
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if let number = try? c.decode(Int.self) {
+            value = String(number)
+        } else {
+            value = try c.decode(String.self)
+        }
+    }
+}
+
+extension KeyedDecodingContainer {
+    /// The value when it is present and well-formed, otherwise nil. Never throws.
+    func lenient<T: Decodable>(_ type: T.Type, _ key: Key) -> T? {
+        (try? decodeIfPresent(type, forKey: key)) ?? nil
+    }
+
+    /// The well-formed elements of an array; malformed ones are dropped.
+    func lenientArray<T: Decodable>(_ type: T.Type, _ key: Key) -> [T]? {
+        lenient([Lossy<T>].self, key)?.compactMap(\.value)
     }
 }
 
