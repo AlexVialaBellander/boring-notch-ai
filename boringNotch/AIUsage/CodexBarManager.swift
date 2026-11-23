@@ -108,8 +108,10 @@ final class CodexBarManager: ObservableObject {
 
     private var samplerTask: Task<Void, Never>?
 
-    /// Low-cost background sampling for the burndown history: every 5 minutes read
-    /// CodexBar's per-account files (no CLI, no network) and record the readings.
+    /// Low-cost background sampling for the closed notch and the burndown history: read
+    /// CodexBar's per-account files and widget snapshot (no CLI, no network) and record
+    /// the readings. The snapshot gives single-login providers (and Claude without
+    /// claude-swap) their row before the Usage tab is ever opened.
     func startHistorySampling() {
         guard samplerTask == nil else { return }
         samplerTask = Task { [weak self] in
@@ -123,8 +125,12 @@ final class CodexBarManager: ObservableObject {
                     if let data = await XPCHelperClient.shared.codexBarAccounts(),
                        let decoded = try? CodexBarDecoding.referenceDateDecoder.decode(CodexBarAccountsPayload.self, from: data) {
                         self.ingest(decoded)
-                        self.rebuild()
                     }
+                    if let data = await XPCHelperClient.shared.codexBarSnapshot(),
+                       let decoded = try? CodexBarDecoding.decoder.decode(CodexBarSnapshot.self, from: data) {
+                        self.snapshot = decoded
+                    }
+                    self.rebuild()
                     // Providers without on-disk account files (e.g. Cursor) need the CLI; it's
                     // quick for them, but keep it to every ~5 minutes.
                     tick += 1
@@ -264,7 +270,9 @@ final class CodexBarManager: ObservableObject {
             let cli = cliResults[id]
             let cost = costResults[id]
             let activeAccountBars = Self.activeAccountBars(provider: id, payload: accountsPayload)
-            guard entry != nil || cli?.usage != nil || !activeAccountBars.isEmpty else { return nil }
+            // claude-swap rows don't need the active account to have a record yet.
+            let hasSwapRows = id == "claude" && !(accountsPayload?.claudeSwapAccounts.isEmpty ?? true)
+            guard entry != nil || cli?.usage != nil || !activeAccountBars.isEmpty || hasSwapRows else { return nil }
 
             var usage = AIProviderUsage(id: id)
             usage.account = cli?.usage?.accountEmail
@@ -370,13 +378,13 @@ final class CodexBarManager: ObservableObject {
 
     // MARK: Accounts
 
-    private var lastActiveSwap: Int?
+    private var lastActiveSwap: String?
 
     /// Stores new per-account data and announces claude-swap switches in the notch.
     private func ingest(_ payload: CodexBarAccountsPayload) {
         let active = payload.claudeSwap?.active
         if let previous = lastActiveSwap, let active, active != previous, Defaults[.showAccountSwapPeek] {
-            let info = payload.claudeSwap?.accounts?[String(active)]
+            let info = payload.claudeSwap?.accounts[active]
             let name = info?.email.flatMap { $0.split(separator: "@").first.map(String.init) } ?? "account \(active)"
             let kind = info?.organizationName.map { $0.hasSuffix("'s Organization") ? "Personal" : "Team" }
             let coordinator = BoringViewCoordinator.shared
@@ -434,10 +442,9 @@ final class CodexBarManager: ObservableObject {
             return [bar("primary", "Limit", record.primary), bar("secondary", "Weekly", record.secondary), bar("tertiary", "Limit", record.tertiary)]
                 .compactMap { $0 }
         }
-        guard provider == "claude", let payload, let records = payload.claude else { return [] }
-        let active = payload.claudeSwap?.active.map(String.init)
-        guard let record = records.first(where: { $0.opaqueID == active }) ?? records.first else { return [] }
-        return claudeBars(record)
+        // Only the account claude-swap says is active; never guess with another account's bars.
+        guard provider == "claude", let active = payload?.claudeSwapAccounts.first(where: \.isActive) else { return [] }
+        return claudeBars(active.usage)
     }
 
     private static func buildAccounts(providers: [AIProviderUsage], payload: CodexBarAccountsPayload?) -> [AIAccountUsage] {
@@ -446,23 +453,24 @@ final class CodexBarManager: ObservableObject {
 
         for provider in providers {
             switch provider.id {
-            case "claude" where !(payload?.claude ?? []).isEmpty:
-                let swap = payload?.claudeSwap
-                let records = (payload?.claude ?? []).sorted { (Int($0.opaqueID ?? "") ?? 0) < (Int($1.opaqueID ?? "") ?? 0) }
-                for record in records {
-                    let id = record.opaqueID ?? UUID().uuidString
-                    let info = swap?.accounts?[id]
+            // One row per claude-swap account. Without claude-swap (or when its list and
+            // CodexBar's records don't match) this falls through to the single login below.
+            case "claude" where !(payload?.claudeSwapAccounts.isEmpty ?? true):
+                for account in payload?.claudeSwapAccounts ?? [] {
+                    let id = account.number
+                    let record = account.usage
+                    let info = account.info
                     let bars = claudeBars(record)
                     let weeklyBars = bars.filter(\.isWeekly)
                     let binding = weeklyBars.max { $0.usedPercent < $1.usedPercent }
-                    let org = info?.organizationName
+                    let org = info.organizationName
                     let badge = org.map { $0.hasSuffix("'s Organization") ? "Personal" : "Team" }
                     let stale = record.usesLastKnownUsage == true
                         || (record.updatedAt.map { Date().timeIntervalSince($0) > staleAfter } ?? false)
                     rows.append(AIAccountUsage(
                         id: "claude-\(id)", provider: "claude",
-                        label: info?.email ?? "Account \(id)", badge: badge,
-                        isActive: swap?.active.map(String.init) == id, isStale: stale,
+                        label: info.email ?? "Account \(id)", badge: badge,
+                        isActive: account.isActive, isStale: stale,
                         weekly: binding,
                         allModels: weeklyBars.first { !$0.isFable },
                         fable: weeklyBars.first { $0.isFable },
