@@ -20,6 +20,14 @@ import Foundation
     func isScreenBrightnessAvailable(with reply: @escaping (Bool) -> Void)
     func currentScreenBrightness(with reply: @escaping (NSNumber?) -> Void)
     func setScreenBrightness(_ value: Float, with reply: @escaping (Bool) -> Void)
+    // CodexBar integration (the helper is unsandboxed, so it can read CodexBar's
+    // shared widget snapshot and run the `codexbar` CLI on behalf of the app)
+    func codexBarSnapshot(with reply: @escaping (Data?) -> Void)
+    func codexBarUsage(_ provider: String, with reply: @escaping (Data?) -> Void)
+    func codexBarCost(_ provider: String, with reply: @escaping (Data?) -> Void)
+    func codexBarConfig(with reply: @escaping (Data?) -> Void)
+    func codexBarAccounts(with reply: @escaping (Data?) -> Void)
+    func codexBarIcon(_ provider: String, with reply: @escaping (Data?) -> Void)
 }
 
 /*

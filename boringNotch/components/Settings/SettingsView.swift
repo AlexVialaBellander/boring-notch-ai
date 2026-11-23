@@ -63,6 +63,12 @@ struct SettingsView: View {
                 NavigationLink(value: "ClaudeCode") {
                     Label("Claude Code", systemImage: "terminal")
                 }
+                NavigationLink(value: "AIUsage") {
+                    Label("AI Usage", systemImage: "chart.bar")
+                }
+                NavigationLink(value: "Converter") {
+                    Label("Converter", systemImage: "arrow.triangle.2.circlepath")
+                }
                 NavigationLink(value: "About") {
                     Label("About", systemImage: "info.circle")
                 }
@@ -90,6 +96,10 @@ struct SettingsView: View {
                     Shelf()
                 case "ClaudeCode":
                     ClaudeCodeSettings()
+                case "AIUsage":
+                    AIUsageSettings()
+                case "Converter":
+                    ConverterSettings()
                 case "Shortcuts":
                     Shortcuts()
                 case "Extensions":
@@ -1891,4 +1901,116 @@ func warningBadge(_ text: String, _ description: String) -> some View {
 
 #Preview {
     HUD()
+}
+
+// MARK: - AI Usage (CodexBar)
+
+struct AIUsageSettings: View {
+    @ObservedObject var manager = CodexBarManager.shared
+    @Default(.enableAIUsage) var enableAIUsage
+
+    var body: some View {
+        Form {
+            Section {
+                settingsToggle(
+                    "Show Usage tab",
+                    detail: "Adds a tab with limits, pace and spend for every provider CodexBar tracks.",
+                    key: .enableAIUsage
+                )
+                settingsToggle(
+                    "Fetch live details",
+                    detail: "Runs the codexbar CLI every few minutes for account, pace (\"runs out in 6h\") and extra limits. Off = snapshot only.",
+                    key: .codexBarFetchLiveDetails
+                )
+                .disabled(!enableAIUsage)
+                settingsToggle(
+                    "Show usage in closed notch",
+                    detail: "Each provider's weekly usage, averaged across all its accounts, centred in the notch.",
+                    key: .showUsageStrip
+                )
+                .disabled(!enableAIUsage)
+                settingsToggle(
+                    "Announce Claude account swaps",
+                    detail: "Briefly shows the new account in the notch when claude-swap switches.",
+                    key: .showAccountSwapPeek
+                )
+                .disabled(!enableAIUsage)
+            } header: {
+                Text("General")
+            } footer: {
+                Text("Data comes straight from CodexBar — boring.notch doesn't log in to any provider itself.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                HStack {
+                    Text("CodexBar")
+                    Spacer()
+                    Text(manager.isInstalled ? "Installed" : "Not installed")
+                        .foregroundStyle(manager.isInstalled ? .green : .secondary)
+                }
+                HStack {
+                    Text("Providers")
+                    Spacer()
+                    Text(manager.providers.isEmpty ? "—" : manager.providers.map(\.displayName).joined(separator: ", "))
+                        .foregroundStyle(.secondary)
+                }
+                Button(manager.isInstalled ? "Open CodexBar" : "Get CodexBar") { manager.openCodexBar() }
+            } header: {
+                Text("Source")
+            }
+        }
+        .onAppear { manager.becameVisible() }
+        .onDisappear { manager.becameHidden() }
+        .accentColor(.effectiveAccent)
+        .navigationTitle("AI Usage")
+    }
+}
+
+// MARK: - Converter
+
+struct ConverterSettings: View {
+    @Default(.converterOutputLocation) var outputLocation
+
+    var body: some View {
+        Form {
+            Section {
+                settingsToggle(
+                    "Enable converter",
+                    detail: "Adds a Convert box next to AirDrop on the shelf.",
+                    key: .enableConverter
+                )
+                Picker("Save converted files", selection: $outputLocation) {
+                    ForEach(ConverterOutputLocation.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }
+            } header: {
+                Text("General")
+            } footer: {
+                Text("Images (JPEG, PNG, HEIC, WebP, TIFF, GIF, BMP, PDF), PDFs (pages to images, text, merge), video (MP4, HEVC, MOV, GIF, audio), audio (M4A, WAV, AIFF) and documents (Word, RTF, HTML, text, ODT, PDF). Everything is converted locally with macOS frameworks; originals are never modified.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .accentColor(.effectiveAccent)
+        .navigationTitle("Converter")
+    }
+}
+
+@ViewBuilder
+private func settingsToggle(_ title: String, detail: String, key: Defaults.Key<Bool>) -> some View {
+    HStack {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.headline)
+            Text(detail)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        Spacer(minLength: 40)
+        Defaults.Toggle("", key: key)
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.large)
+    }
 }

@@ -187,6 +187,16 @@ extension Defaults.Keys {
     static let enableClaudeCode = Key<Bool>("enableClaudeCode", default: true)
     static let enableClaudeCodeCollapsedView = Key<Bool>("enableClaudeCodeCollapsedView", default: true)
 
+    // MARK: AI Usage (CodexBar)
+    static let enableAIUsage = Key<Bool>("enableAIUsage", default: true)
+    static let codexBarFetchLiveDetails = Key<Bool>("codexBarFetchLiveDetails", default: true)
+    static let showUsageStrip = Key<Bool>("showUsageStrip", default: true)
+    static let showAccountSwapPeek = Key<Bool>("showAccountSwapPeek", default: true)
+
+    // MARK: File Converter
+    static let enableConverter = Key<Bool>("enableConverter", default: true)
+    static let converterOutputLocation = Key<ConverterOutputLocation>("converterOutputLocation", default: .nextToOriginal)
+
     // MARK: Advanced Settings
     static let useCustomAccentColor = Key<Bool>("useCustomAccentColor", default: false)
     static let customAccentColorData = Key<Data?>("customAccentColorData", default: nil)

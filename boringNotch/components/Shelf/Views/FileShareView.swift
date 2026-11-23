@@ -27,6 +27,7 @@ struct FileShareView: View {
         dropArea
             .background(NSViewHost(view: $hostView))
             .onDrop(of: [.fileURL, .url, .utf8PlainText, .plainText, .data, .image], isTargeted: $vm.dropZoneTargeting) { providers in
+                dragLog.info("drop: share box, \(providers.count) item(s)")
                 interactionNonce = .init()
                 vm.dropEvent = true
                 Task { await handleDrop(providers) }

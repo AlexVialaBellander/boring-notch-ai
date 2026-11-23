@@ -24,6 +24,9 @@ struct ContentView: View {
     @ObservedObject var brightnessManager = BrightnessManager.shared
     @ObservedObject var volumeManager = VolumeManager.shared
     @ObservedObject var claudeCodeManager = ClaudeCodeManager.shared
+    @ObservedObject var codexBar = CodexBarManager.shared
+    @Default(.enableAIUsage) var enableAIUsage
+    @Default(.showUsageStrip) var showUsageStrip
     @State private var hoverTask: Task<Void, Never>?
     @State private var isHovering: Bool = false
     @State private var anyDropDebounceTask: Task<Void, Never>?
@@ -31,6 +34,8 @@ struct ContentView: View {
     @State private var gestureProgress: CGFloat = .zero
 
     @State private var haptics: Bool = false
+    /// Physical-notch displays: usage row is visible only during the once-a-minute peek.
+    @State private var usagePeekVisible: Bool = false
 
     @Namespace var albumArtNamespace
 
@@ -219,8 +224,12 @@ struct ContentView: View {
         .background(dragDetector)
         .preferredColorScheme(.dark)
         .environmentObject(vm)
+        .onAppear {
+            if Defaults[.enableAIUsage] { CodexBarManager.shared.startHistorySampling() }
+        }
         .onChange(of: vm.anyDropZoneTargeting) { _, isTargeted in
             anyDropDebounceTask?.cancel()
+            dragLog.info("targeting=\(isTargeted) state=\(vm.notchState == .open ? "open" : "closed", privacy: .public) view=\(String(describing: coordinator.currentView), privacy: .public) zone=\(vm.dropZoneTargeting)/\(vm.dragDetectorTargeting)/\(vm.generalDropTargeting)/\(vm.converterDropTargeting)")
 
             if isTargeted {
                 if vm.notchState == .closed {
@@ -289,7 +298,7 @@ struct ContentView: View {
                             .frame(width: 76, alignment: .trailing)
                         }
                         .frame(height: vm.effectiveClosedNotchHeight, alignment: .center)
-                      } else if coordinator.sneakPeek.show && Defaults[.inlineHUD] && (coordinator.sneakPeek.type != .music) && (coordinator.sneakPeek.type != .battery) && vm.notchState == .closed {
+                      } else if coordinator.sneakPeek.show && Defaults[.inlineHUD] && (coordinator.sneakPeek.type != .music) && (coordinator.sneakPeek.type != .battery) && (coordinator.sneakPeek.type != .accountSwap) && vm.notchState == .closed {
                           InlineHUD(type: $coordinator.sneakPeek.type, value: $coordinator.sneakPeek.value, icon: $coordinator.sneakPeek.icon, hoverAnimation: $isHovering, gestureProgress: $gestureProgress)
                               .transition(.opacity)
                       } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music) && vm.notchState == .closed && (musicManager.isPlaying || !musicManager.isPlayerIdle) && coordinator.musicLiveActivityEnabled && !vm.hideOnClosed {
@@ -311,7 +320,23 @@ struct ContentView: View {
                        }
 
                       if coordinator.sneakPeek.show {
-                          if (coordinator.sneakPeek.type != .music) && (coordinator.sneakPeek.type != .battery) && !Defaults[.inlineHUD] && vm.notchState == .closed {
+                          if coordinator.sneakPeek.type == .accountSwap {
+                              // claude-swap changed account — shown like a song change
+                              if vm.notchState == .closed && !vm.hideOnClosed {
+                                  HStack(spacing: 6) {
+                                      Image(systemName: "arrow.triangle.2.circlepath")
+                                          .foregroundStyle(AIProviderStyle.tint(for: "claude"))
+                                      Text(coordinator.accountSwapMessage)
+                                          .lineLimit(1)
+                                          .truncationMode(.tail)
+                                  }
+                                  .font(.system(size: 12, weight: .medium))
+                                  .foregroundStyle(.gray)
+                                  .frame(width: max(0, vm.closedNotchSize.width - 24))
+                                  .padding(.bottom, 10)
+                                  .transition(.opacity)
+                              }
+                          } else if (coordinator.sneakPeek.type != .music) && (coordinator.sneakPeek.type != .battery) && !Defaults[.inlineHUD] && vm.notchState == .closed {
                               SystemEventIndicatorModifier(
                                   eventType: $coordinator.sneakPeek.type,
                                   value: $coordinator.sneakPeek.value,
@@ -359,8 +384,8 @@ struct ContentView: View {
                         NotchHomeView(albumArtNamespace: albumArtNamespace)
                     case .shelf:
                         ShelfView()
-                    case .claudeCode:
-                        ClaudeCodeStatsView()
+                    case .aiUsage:
+                        AIUsageView()
                     }
                 }
                 .transition(
@@ -373,7 +398,44 @@ struct ContentView: View {
                 .opacity(gestureProgress != 0 ? 1.0 - min(abs(gestureProgress) * 0.1, 0.3) : 1.0)
             }
         }
+        // Usage: on a display without a camera notch it sits inside, centred.
+        // With a real notch the middle has no pixels, so the notch peeks down for a
+        // few seconds once a minute to show it, then tucks back up.
+        .padding(.bottom, showsUsageStrip && hasPhysicalNotch && usagePeekVisible ? CodexBarStrip.height + 2 : 0)
+        .overlay(alignment: hasPhysicalNotch ? .bottom : .center) {
+            if showsUsageStrip && (!hasPhysicalNotch || usagePeekVisible) {
+                CodexBarStrip(stats: codexBar.stripStats)
+                    .frame(width: max(0, vm.closedNotchSize.width - 2 * cornerRadiusInsets.closed.bottom), height: CodexBarStrip.height)
+                    .padding(.bottom, hasPhysicalNotch ? 2 : 0)
+                    .transition(.opacity)
+            }
+        }
+        // A Timer.publish created in `body` restarts on every re-render (and the notch
+        // re-renders constantly), so it never reached 60s. A task loop survives re-renders.
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                guard !Task.isCancelled else { return }
+                let ok = hasPhysicalNotch && showsUsageStrip && !usagePeekVisible
+                dragLog.info("usage peek tick: physicalNotch=\(hasPhysicalNotch) strip=\(showsUsageStrip) -> \(ok ? "show" : "skip", privacy: .public)")
+                guard ok else { continue }
+                withAnimation(.smooth(duration: 0.35)) { usagePeekVisible = true }
+                try? await Task.sleep(for: .seconds(4))
+                withAnimation(.smooth(duration: 0.35)) { usagePeekVisible = false }
+            }
+        }
         .onDrop(of: [.fileURL, .url, .utf8PlainText, .plainText, .data], delegate: GeneralDropTargetDelegate(isTargeted: $vm.generalDropTargeting))
+    }
+
+    private var hasPhysicalNotch: Bool {
+        (NSScreen.screen(withUUID: vm.screenUUID ?? coordinator.selectedScreenUUID) ?? NSScreen.main)?.safeAreaInsets.top ?? 0 > 0
+    }
+
+    /// Aggregate weekly usage per provider inside the closed notch (never wider).
+    private var showsUsageStrip: Bool {
+        vm.notchState == .closed && !vm.hideOnClosed && !coordinator.helloAnimationRunning
+            && !coordinator.sneakPeek.show && !coordinator.expandingView.show
+            && enableAIUsage && showUsageStrip && !codexBar.stripStats.isEmpty
     }
 
     @ViewBuilder
@@ -505,6 +567,7 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())
         .onDrop(of: [.fileURL, .url, .utf8PlainText, .plainText, .data], isTargeted: $vm.dragDetectorTargeting) { providers in
+            dragLog.info("drop: closed-notch detector, \(providers.count) item(s)")
             vm.dropEvent = true
             ShelfStateViewModel.shared.load(providers)
             return true

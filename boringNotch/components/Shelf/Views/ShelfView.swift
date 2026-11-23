@@ -7,19 +7,38 @@
 
 import SwiftUI
 import AppKit
+import Defaults
 
 struct ShelfView: View {
     @EnvironmentObject var vm: BoringViewModel
     @StateObject var tvm = ShelfStateViewModel.shared
     @StateObject var selection = ShelfSelectionModel.shared
     @StateObject private var quickLookService = QuickLookService()
+    @ObservedObject private var converter = ConverterViewModel.shared
     private let spacing: CGFloat = 8
 
     var body: some View {
+        if converter.hasWork && Defaults[.enableConverter] {
+            // Files dropped on "Convert": the shelf becomes the converter until Done/Clear.
+            ConverterView()
+                .environmentObject(vm)
+                .transition(.opacity.combined(with: .scale(scale: 0.97)))
+        } else {
+            shelf
+                .transition(.opacity)
+        }
+    }
+
+    private var shelf: some View {
         HStack(spacing: 12) {
             FileShareView()
                 .aspectRatio(1, contentMode: .fit)
                 .environmentObject(vm)
+            if Defaults[.enableConverter] {
+                ConvertDropZone()
+                    .aspectRatio(1, contentMode: .fit)
+                    .environmentObject(vm)
+            }
             panel
                 .onDrop(of: [.fileURL, .url, .utf8PlainText, .plainText, .data], isTargeted: $vm.dragDetectorTargeting) { providers in
                     handleDrop(providers: providers)
@@ -33,6 +52,7 @@ struct ShelfView: View {
     }
     
     private func handleDrop(providers: [NSItemProvider]) -> Bool {
+        dragLog.info("drop: shelf panel, \(providers.count) item(s), selectionDragging=\(selection.isDragging)")
         guard !selection.isDragging else { return false }
         vm.dropEvent = true
         ShelfStateViewModel.shared.load(providers)

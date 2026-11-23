@@ -55,3 +55,6 @@ build/
 
 # Claude Code local config
 .claude/
+
+# The global *.sw* rule (vim swap files) also matches Swift sources; keep them tracked.
+!*.swift

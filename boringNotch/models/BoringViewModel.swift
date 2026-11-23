@@ -22,6 +22,7 @@ class BoringViewModel: NSObject, ObservableObject {
     @Published var dragDetectorTargeting: Bool = false
     @Published var generalDropTargeting: Bool = false
     @Published var dropZoneTargeting: Bool = false
+    @Published var converterDropTargeting: Bool = false
     @Published var dropEvent: Bool = false
     @Published var anyDropZoneTargeting: Bool = false
     var cancellables: Set<AnyCancellable> = []
@@ -59,14 +60,26 @@ class BoringViewModel: NSObject, ObservableObject {
         notchSize = getClosedNotchSize(screenUUID: screenUUID)
         closedNotchSize = notchSize
 
-        Publishers.CombineLatest3($dropZoneTargeting, $dragDetectorTargeting, $generalDropTargeting)
-            .map { shelf, drag, general in
-                shelf || drag || general
+        Publishers.CombineLatest4($dropZoneTargeting, $dragDetectorTargeting, $generalDropTargeting, $converterDropTargeting)
+            .map { shelf, drag, general, converter in
+                shelf || drag || general || converter
             }
             .assign(to: \.anyDropZoneTargeting, on: self)
             .store(in: &cancellables)
         
         setupDetectorObserver()
+
+        // Resize the open notch when switching to/from a taller tab.
+        BoringViewCoordinator.shared.$currentView
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] view in
+                guard let self, self.notchState == .open else { return }
+                withAnimation(.spring(response: 0.42, dampingFraction: 0.8)) {
+                    self.notchSize = openNotchSize(for: view)
+                }
+            }
+            .store(in: &cancellables)
     }
     
     private func setupDetectorObserver() {
@@ -190,7 +203,8 @@ class BoringViewModel: NSObject, ObservableObject {
     }
 
     func open() {
-        self.notchSize = openNotchSize
+        dragLog.info("vm.open() view=\(String(describing: self.coordinator.currentView), privacy: .public)")
+        self.notchSize = openNotchSize(for: coordinator.currentView)
         self.notchState = .open
 
         // Force music information update when notch is opened
@@ -198,6 +212,7 @@ class BoringViewModel: NSObject, ObservableObject {
     }
 
     func close() {
+        dragLog.info("vm.close() requested (preventClose=\(SharingStateManager.shared.preventNotchClose))")
         // Do not close while a share picker or sharing service is active
         if SharingStateManager.shared.preventNotchClose {
             return
@@ -213,8 +228,10 @@ class BoringViewModel: NSObject, ObservableObject {
         // Otherwise, if the user has not enabled openLastShelfByDefault, set the view to Claude Code
     if !ShelfStateViewModel.shared.isEmpty && Defaults[.openShelfByDefault] {
             coordinator.currentView = .shelf
+        } else if coordinator.currentView == .shelf && ConverterViewModel.shared.hasWork {
+            // Keep a pending/finished conversion on screen for the next open.
         } else if !coordinator.openLastTabByDefault {
-            coordinator.currentView = .claudeCode
+            coordinator.currentView = .home
         }
     }
 

@@ -339,6 +339,9 @@
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		112FB72F2CCF12CC0015238C /* private */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = private; sourceTree = "<group>"; };
+		AA1E5A0E2F10000100C0DE01 /* AIUsage */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = AIUsage; sourceTree = "<group>"; };
+		AA1E5A0E2F10000200C0DE02 /* Converter */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Converter; sourceTree = "<group>"; };
+		AA1E5A0E2F10000300C0DE03 /* MenuBar */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = MenuBar; sourceTree = "<group>"; };
 		11F748502EC9AABA00F841DB /* BoringNotchXPCHelper */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (11F7485C2EC9AABA00F841DB /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = BoringNotchXPCHelper; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
@@ -601,6 +604,9 @@
 				14CEF41E2C5CAED400855D72 /* boringNotch.entitlements */,
 				14CEF41B2C5CAED400855D72 /* Preview Content */,
 				112FB72F2CCF12CC0015238C /* private */,
+				AA1E5A0E2F10000100C0DE01 /* AIUsage */,
+				AA1E5A0E2F10000200C0DE02 /* Converter */,
+				AA1E5A0E2F10000300C0DE03 /* MenuBar */,
 				11CC44A12CEE614100C7244B /* BoringViewCoordinator.swift */,
 			);
 			path = boringNotch;
@@ -831,6 +837,9 @@
 			);
 			fileSystemSynchronizedGroups = (
 				112FB72F2CCF12CC0015238C /* private */,
+				AA1E5A0E2F10000100C0DE01 /* AIUsage */,
+				AA1E5A0E2F10000200C0DE02 /* Converter */,
+				AA1E5A0E2F10000300C0DE03 /* MenuBar */,
 			);
 			name = boringNotch;
 			packageProductDependencies = (

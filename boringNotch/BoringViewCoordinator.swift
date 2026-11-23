@@ -18,6 +18,7 @@ enum SneakContentType {
     case mic
     case battery
     case download
+    case accountSwap
 }
 
 struct sneakPeek {
@@ -50,8 +51,10 @@ struct ExpandedItem {
 class BoringViewCoordinator: ObservableObject {
     static let shared = BoringViewCoordinator()
 
-    @Published var currentView: NotchViews = .claudeCode
+    @Published var currentView: NotchViews = .home
     @Published var helloAnimationRunning: Bool = false
+    /// Text for the `.accountSwap` sneak peek ("Claude → humans · Team").
+    @Published var accountSwapMessage: String = ""
     private var sneakPeekDispatch: DispatchWorkItem?
     private var expandingViewDispatch: DispatchWorkItem?
     private var hudEnableTask: Task<Void, Never>?
@@ -66,7 +69,7 @@ class BoringViewCoordinator: ObservableObject {
             if !alwaysShowTabs {
                 openLastTabByDefault = false
                 if ShelfStateViewModel.shared.isEmpty || !Defaults[.openShelfByDefault] {
-                    currentView = .claudeCode
+                    currentView = .home
                 }
             }
         }
@@ -210,7 +213,7 @@ class BoringViewCoordinator: ObservableObject {
         icon: String = ""
     ) {
         sneakPeekDuration = duration
-        if type != .music {
+        if type != .music && type != .accountSwap {
             // close()
             if !Defaults[.hudReplacement] {
                 return
@@ -295,6 +298,6 @@ class BoringViewCoordinator: ObservableObject {
     }
     
     func showEmpty() {
-        currentView = .claudeCode
+        currentView = .home
     }
 }

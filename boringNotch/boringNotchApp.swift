@@ -197,12 +197,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let notchHeight = openNotchSize.height
         let notchWidth = openNotchSize.width
         
-        // Create notch region at the top-center of the screen where an open notch would occupy
+        // Region around where the open notch will be, padded so the notch opens *before*
+        // the cursor reaches the top edge. Dragging to the very top triggers macOS's
+        // "drag to top → Mission Control", which we can't intercept.
+        let horizontalPadding: CGFloat = 80
+        let verticalPadding: CGFloat = 90
         let notchRegion = CGRect(
-            x: screenFrame.midX - notchWidth / 2,
-            y: screenFrame.maxY - notchHeight,
-            width: notchWidth,
-            height: notchHeight
+            x: screenFrame.midX - notchWidth / 2 - horizontalPadding,
+            y: screenFrame.maxY - notchHeight - verticalPadding,
+            width: notchWidth + horizontalPadding * 2,
+            height: notchHeight + verticalPadding
         )
         
         let detector = DragDetector(notchRegion: notchRegion)
@@ -219,6 +223,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handleDragEntersNotchRegion(onScreen screen: NSScreen) {
         guard let uuid = screen.displayUUID else { return }
+        dragLog.info("detector: drag entered region on \(screen.localizedName, privacy: .public) showOnAll=\(Defaults[.showOnAllDisplays]) windowScreen=\(self.window?.screen?.localizedName ?? "nil", privacy: .public)")
         
         if Defaults[.showOnAllDisplays], let viewModel = viewModels[uuid] {
             viewModel.open()

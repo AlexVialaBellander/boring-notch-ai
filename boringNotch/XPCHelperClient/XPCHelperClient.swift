@@ -241,6 +241,92 @@ final class XPCHelperClient: NSObject {
             return false
         }
     }
+
+    // MARK: - CodexBar
+
+    /// Raw `widget-snapshot.json` from CodexBar's group container, if present.
+    nonisolated func codexBarSnapshot() async -> Data? {
+        do {
+            let service = await MainActor.run { ensureRemoteService() }
+            return try await service.withContinuation { service, continuation in
+                service.codexBarSnapshot { data in
+                    continuation.resume(returning: data)
+                }
+            }
+        } catch {
+            return nil
+        }
+    }
+
+    /// Raw JSON from `codexbar cost --provider <provider> --json`.
+    nonisolated func codexBarCost(provider: String) async -> Data? {
+        do {
+            let service = await MainActor.run { ensureRemoteService() }
+            return try await service.withContinuation { service, continuation in
+                service.codexBarCost(provider) { data in
+                    continuation.resume(returning: data)
+                }
+            }
+        } catch {
+            return nil
+        }
+    }
+
+    /// Per-account usage (all Claude swap accounts, Codex accounts) as one JSON blob.
+    nonisolated func codexBarAccounts() async -> Data? {
+        do {
+            let service = await MainActor.run { ensureRemoteService() }
+            return try await service.withContinuation { service, continuation in
+                service.codexBarAccounts { data in
+                    continuation.resume(returning: data)
+                }
+            }
+        } catch {
+            return nil
+        }
+    }
+
+    /// SVG data of CodexBar's provider logo.
+    nonisolated func codexBarIcon(provider: String) async -> Data? {
+        do {
+            let service = await MainActor.run { ensureRemoteService() }
+            return try await service.withContinuation { service, continuation in
+                service.codexBarIcon(provider) { data in
+                    continuation.resume(returning: data)
+                }
+            }
+        } catch {
+            return nil
+        }
+    }
+
+    /// Contents of `~/.codexbar/config.json`.
+    nonisolated func codexBarConfig() async -> Data? {
+        do {
+            let service = await MainActor.run { ensureRemoteService() }
+            return try await service.withContinuation { service, continuation in
+                service.codexBarConfig { data in
+                    continuation.resume(returning: data)
+                }
+            }
+        } catch {
+            return nil
+        }
+    }
+
+    /// Raw JSON from `codexbar usage --provider <provider> --json`.
+    nonisolated func codexBarUsage(provider: String) async -> Data? {
+        do {
+            let service = await MainActor.run { ensureRemoteService() }
+            return try await service.withContinuation { service, continuation in
+                service.codexBarUsage(provider) { data in
+                    continuation.resume(returning: data)
+                }
+            }
+        } catch {
+            return nil
+        }
+    }
 }
 
 extension Notification.Name {

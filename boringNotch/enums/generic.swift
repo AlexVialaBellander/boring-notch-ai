@@ -27,7 +27,12 @@ public enum NotchState {
 public enum NotchViews {
     case home
     case shelf
-    case claudeCode
+    case aiUsage
+}
+
+enum ConverterOutputLocation: String, CaseIterable, Defaults.Serializable {
+    case nextToOriginal = "Next to original"
+    case downloads = "Downloads folder"
 }
 
 enum SettingsEnum {
