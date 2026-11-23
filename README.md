@@ -59,13 +59,13 @@ A **Usage** tab with every account you use on Claude, Codex and Cursor in one li
 **What it needs:**
 
 - **[CodexBar](https://github.com/steipete/CodexBar): required.** The tab only reads CodexBar's data and never logs in to a provider itself. Install CodexBar and open it once. Without it the tab says so.
-- **claude-swap: optional.** With it, each Claude account gets its own row. Without it, or if its files are missing, unreadable or don't match CodexBar's, Claude shows as one row from CodexBar's own login. A malformed file only loses that file's rows; the other providers keep working.
+- **claude-swap: optional.** With it, each Claude account that CodexBar has usage for gets its own row. Without it, or if its files are missing, unreadable or don't match CodexBar's, Claude shows as one row from CodexBar's own login. A malformed file only loses that file's rows; the other providers keep working.
 
 **What it reads** (local files, read-only, through the app's helper because the app is sandboxed):
 
 | From | Files |
 |---|---|
-| CodexBar | `widget-snapshot.json` in its group container, `~/.codexbar/config.json`, `~/Library/Application Support/CodexBar/*.json`, the `codexbar` CLI (for *Fetch live details*, and for spend history when the snapshot lacks it) |
+| CodexBar | `widget-snapshot.json` in its group container, `~/.codexbar/config.json`, `claude-swap-retained-usage.json` and `codex-account-snapshots.json` in `~/Library/Application Support/CodexBar/`, the `codexbar` CLI (for *Fetch live details*, and for spend history when the snapshot lacks it) |
 | claude-swap | `~/.claude-swap-backup/sequence.json`: only each account's email, organisation name and which one is active |
 
 Turn things on and off under **Settings → AI Usage**: *Show Usage tab*, *Fetch live details*, *Show usage in closed notch*, *Announce Claude account swaps*.
@@ -100,7 +100,8 @@ Quit any other copy of Boring Notch first. Keep the build out of `/tmp`: macOS c
 Checks for how the Usage tab handles missing or malformed CodexBar and claude-swap files:
 
 ```bash
-swiftc -o /tmp/ai-usage-checks boringNotch/AIUsage/CodexBarModels.swift Tests/AIUsageChecks/main.swift && /tmp/ai-usage-checks
+swiftc -o /tmp/ai-usage-checks boringNotch/AIUsage/CodexBarModels.swift \
+  BoringNotchXPCHelper/BoringNotchXPCHelper+CodexBar.swift Tests/AIUsageChecks/main.swift && /tmp/ai-usage-checks
 ```
 
 ## Installation

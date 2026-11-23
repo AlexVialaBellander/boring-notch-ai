@@ -213,15 +213,13 @@ struct CodexBarAccountsPayload: Decodable {
         struct Account: Decodable {
             var email: String?
             var organizationName: String?
-            var alias: String?
 
-            private enum CodingKeys: String, CodingKey { case email, organizationName, alias }
+            private enum CodingKeys: String, CodingKey { case email, organizationName }
 
             init(from decoder: Decoder) throws {
                 let c = try decoder.container(keyedBy: CodingKeys.self)
                 email = c.lenient(String.self, .email)
                 organizationName = c.lenient(String.self, .organizationName)
-                alias = c.lenient(String.self, .alias)
             }
         }
     }

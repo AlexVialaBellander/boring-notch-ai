@@ -68,7 +68,7 @@ extension BoringNotchXPCHelper {
     }
 
     /// Per-account usage CodexBar keeps on disk, merged with claude-swap's account
-    /// directory (email/org/alias only). Dates stay as Apple reference-date seconds.
+    /// directory (email/org only). Dates stay as Apple reference-date seconds.
     ///   claude      – ~/Library/Application Support/CodexBar/claude-swap-retained-usage.json
     ///   claudeSwap  – ~/.claude-swap-backup/sequence.json (opaqueID → email)
     ///   codex       – ~/Library/Application Support/CodexBar/codex-account-snapshots.json
@@ -79,34 +79,48 @@ extension BoringNotchXPCHelper {
             func json(_ url: URL) -> Any? {
                 (try? Data(contentsOf: url)).flatMap { try? JSONSerialization.jsonObject(with: $0) }
             }
-            var out: [String: Any] = [:]
-
-            if let retained = json(support.appendingPathComponent("claude-swap-retained-usage.json")) as? [[String: Any]] {
-                let keep: Set<String> = ["opaqueID", "primary", "secondary", "tertiary", "extraRateWindows", "updatedAt", "usesLastKnownUsage"]
-                out["claude"] = retained.map { $0.filter { keep.contains($0.key) } }
-            }
-            if let sequence = json(home.appendingPathComponent(".claude-swap-backup/sequence.json")) as? [String: Any] {
-                var accounts: [String: Any] = [:]
-                for (number, value) in (sequence["accounts"] as? [String: Any]) ?? [:] {
-                    guard let account = value as? [String: Any] else { continue }
-                    accounts[number] = account.filter { ["email", "organizationName", "alias"].contains($0.key) }
-                }
-                out["claudeSwap"] = ["active": sequence["activeAccountNumber"] ?? NSNull(), "accounts": accounts]
-            }
-            if let codex = json(support.appendingPathComponent("codex-account-snapshots.json")) as? [String: Any],
-               let records = codex["records"] as? [[String: Any]] {
-                out["codex"] = records.compactMap { record -> [String: Any]? in
-                    guard let snapshot = record["snapshot"] as? [String: Any] else { return nil }
-                    var entry = snapshot.filter { ["primary", "secondary", "tertiary", "updatedAt"].contains($0.key) }
-                    entry["email"] = snapshot["accountEmail"] ?? record["id"]
-                    entry["plan"] = snapshot["loginMethod"]
-                    return entry
-                }
-            }
+            let out = Self.mergeAccountFiles(
+                retained: json(support.appendingPathComponent("claude-swap-retained-usage.json")),
+                sequence: json(home.appendingPathComponent(".claude-swap-backup/sequence.json")),
+                codex: json(support.appendingPathComponent("codex-account-snapshots.json"))
+            )
             // `{}` when none of the files exist, so the app drops accounts that are gone;
             // nil stays reserved for "the helper couldn't answer".
             reply(try? JSONSerialization.data(withJSONObject: out))
         }
+    }
+
+    /// Picks the fields the app needs out of the three parsed files (any of them may be
+    /// missing or malformed). A record that isn't an object is skipped on its own, so it
+    /// never takes its siblings with it. Pure, so Tests/AIUsageChecks can run it.
+    static func mergeAccountFiles(retained: Any?, sequence: Any?, codex: Any?) -> [String: Any] {
+        func objects(_ value: Any?) -> [[String: Any]]? {
+            (value as? [Any])?.compactMap { $0 as? [String: Any] }
+        }
+        var out: [String: Any] = [:]
+
+        if let retained = objects(retained) {
+            let keep: Set<String> = ["opaqueID", "primary", "secondary", "tertiary", "extraRateWindows", "updatedAt", "usesLastKnownUsage"]
+            out["claude"] = retained.map { $0.filter { keep.contains($0.key) } }
+        }
+        if let sequence = sequence as? [String: Any] {
+            var accounts: [String: Any] = [:]
+            for (number, value) in (sequence["accounts"] as? [String: Any]) ?? [:] {
+                guard let account = value as? [String: Any] else { continue }
+                accounts[number] = account.filter { ["email", "organizationName"].contains($0.key) }
+            }
+            out["claudeSwap"] = ["active": sequence["activeAccountNumber"] ?? NSNull(), "accounts": accounts]
+        }
+        if let records = objects((codex as? [String: Any])?["records"]) {
+            out["codex"] = records.compactMap { record -> [String: Any]? in
+                guard let snapshot = record["snapshot"] as? [String: Any] else { return nil }
+                var entry = snapshot.filter { ["primary", "secondary", "tertiary", "updatedAt"].contains($0.key) }
+                entry["email"] = snapshot["accountEmail"] ?? record["id"]
+                entry["plan"] = snapshot["loginMethod"]
+                return entry
+            }
+        }
+        return out
     }
 
     /// CodexBar's own monochrome provider logo (`ProviderIcon-<id>.svg`) — the one its

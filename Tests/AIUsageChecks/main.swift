@@ -1,9 +1,14 @@
 // Checks for how the Usage tab reads CodexBar's and claude-swap's files when they are
-// missing, partial or malformed. No test target needed:
+// missing, partial or malformed: the helper's merge, then the app's decoding and matching.
+// No test target needed:
 //
-//   swiftc -o /tmp/ai-usage-checks boringNotch/AIUsage/CodexBarModels.swift Tests/AIUsageChecks/main.swift && /tmp/ai-usage-checks
+//   swiftc -o /tmp/ai-usage-checks boringNotch/AIUsage/CodexBarModels.swift \
+//     BoringNotchXPCHelper/BoringNotchXPCHelper+CodexBar.swift Tests/AIUsageChecks/main.swift && /tmp/ai-usage-checks
 
 import Foundation
+
+/// Stand-in for the XPC service class, so its CodexBar extension compiles here.
+final class BoringNotchXPCHelper: NSObject {}
 
 var failures = 0
 func check(_ condition: Bool, _ name: String) {
@@ -82,6 +87,31 @@ do {
     let p = payload(#"{"claude": [{"opaqueID": "1", "updatedAt": 100, "secondary": {"usedPercent": 10}}, {"opaqueID": "1", "updatedAt": 200, "secondary": {"usedPercent": 90}}], \#(swapTwo)}"#)
     check(p?.claudeSwapAccounts.count == 1, "duplicate record: one row")
     check(p?.claudeSwapAccounts.first?.usage.secondary?.usedPercent == 90, "duplicate record: newest wins")
+}
+
+// End to end: files as the helper reads them, through its merge, into the app.
+func throughHelper(retained: String?, sequence: String?, codex: String?) -> (merged: [String: Any], payload: CodexBarAccountsPayload?) {
+    func parse(_ text: String?) -> Any? { text.flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) } }
+    let merged = BoringNotchXPCHelper.mergeAccountFiles(retained: parse(retained), sequence: parse(sequence), codex: parse(codex))
+    let data = try! JSONSerialization.data(withJSONObject: merged)
+    return (merged, try? CodexBarDecoding.referenceDateDecoder.decode(CodexBarAccountsPayload.self, from: data))
+}
+let sequenceFile = #"{"activeAccountNumber": 2, "accounts": {"1": {"email": "a@x.com", "alias": "work", "uuid": "u1"}, "2": {"email": "b@x.com"}, "3": "junk"}}"#
+let codexFile = #"{"records": [{"id": "c", "snapshot": {"accountEmail": "c@x.com", "loginMethod": "pro", "secondary": \#(weekly)}}, "junk"]}"#
+do {
+    let r = throughHelper(retained: #"[{"opaqueID": "1", "secondary": \#(weekly)}, {"opaqueID": "2", "secondary": \#(weekly)}, null, 7]"#,
+                          sequence: sequenceFile, codex: codexFile)
+    check(r.payload?.claudeSwapAccounts.map(\.number) == ["1", "2"], "helper: a bad retained record doesn't drop the others")
+    check(r.payload?.codex?.map(\.email) == ["c@x.com"], "helper: a bad codex record doesn't drop the others")
+    check(r.payload?.claudeSwapAccounts.first(where: \.isActive)?.number == "2", "helper: active account carried through")
+    let accounts = (r.merged["claudeSwap"] as? [String: Any])?["accounts"] as? [String: [String: Any]]
+    check(accounts?["1"].map { Set($0.keys) } == ["email"], "helper: only email and organisation leave claude-swap's file")
+}
+do {
+    let r = throughHelper(retained: nil, sequence: nil, codex: nil)
+    check(r.merged.isEmpty && r.payload != nil && r.payload?.claudeSwapAccounts.isEmpty == true, "helper: no files gives {} and no accounts")
+    let s = throughHelper(retained: #"{"not": "a list"}"#, sequence: "[1, 2]", codex: #"{"records": "nope"}"#)
+    check(s.merged.isEmpty && s.payload?.codex == nil, "helper: wrong file shapes are ignored")
 }
 
 // Not an object at all.

@@ -108,8 +108,10 @@ final class CodexBarManager: ObservableObject {
 
     private var samplerTask: Task<Void, Never>?
 
-    /// Low-cost background sampling for the burndown history: every 5 minutes read
-    /// CodexBar's per-account files (no CLI, no network) and record the readings.
+    /// Low-cost background sampling for the closed notch and the burndown history: read
+    /// CodexBar's per-account files and widget snapshot (no CLI, no network) and record
+    /// the readings. The snapshot gives single-login providers (and Claude without
+    /// claude-swap) their row before the Usage tab is ever opened.
     func startHistorySampling() {
         guard samplerTask == nil else { return }
         samplerTask = Task { [weak self] in
@@ -123,8 +125,12 @@ final class CodexBarManager: ObservableObject {
                     if let data = await XPCHelperClient.shared.codexBarAccounts(),
                        let decoded = try? CodexBarDecoding.referenceDateDecoder.decode(CodexBarAccountsPayload.self, from: data) {
                         self.ingest(decoded)
-                        self.rebuild()
                     }
+                    if let data = await XPCHelperClient.shared.codexBarSnapshot(),
+                       let decoded = try? CodexBarDecoding.decoder.decode(CodexBarSnapshot.self, from: data) {
+                        self.snapshot = decoded
+                    }
+                    self.rebuild()
                     // Providers without on-disk account files (e.g. Cursor) need the CLI; it's
                     // quick for them, but keep it to every ~5 minutes.
                     tick += 1
@@ -264,7 +270,9 @@ final class CodexBarManager: ObservableObject {
             let cli = cliResults[id]
             let cost = costResults[id]
             let activeAccountBars = Self.activeAccountBars(provider: id, payload: accountsPayload)
-            guard entry != nil || cli?.usage != nil || !activeAccountBars.isEmpty else { return nil }
+            // claude-swap rows don't need the active account to have a record yet.
+            let hasSwapRows = id == "claude" && !(accountsPayload?.claudeSwapAccounts.isEmpty ?? true)
+            guard entry != nil || cli?.usage != nil || !activeAccountBars.isEmpty || hasSwapRows else { return nil }
 
             var usage = AIProviderUsage(id: id)
             usage.account = cli?.usage?.accountEmail
